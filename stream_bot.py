@@ -22,7 +22,7 @@ try:
 except Exception:  # pragma: no cover
     av = None  # type: ignore
 
-from bot import Bot
+from bot import Bot, rect_center, draw_rectangles
 
 
 def _adb_screenrecord_stream(serial: Optional[str] = None, bit_rate: str = "8000000", size: Optional[str] = None):
@@ -218,3 +218,73 @@ class StreamBot(Bot):
 
     def __exit__(self, exc_type, exc, tb) -> None:
         self.close()
+
+    # --- Streaming match utilities ---
+    def _match_on_frame(self, frame: np.ndarray, template: np.ndarray, threshold: float = 0.7, gray: bool = False) -> np.ndarray:
+        """Return grouped rectangles (Nx4) for matches in the given frame."""
+        if gray:
+            frame_g = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if frame.ndim == 3 else frame
+            tpl_g = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY) if template.ndim == 3 else template
+            res = cv2.matchTemplate(frame_g, tpl_g, cv2.TM_CCOEFF_NORMED)
+            th, tw = tpl_g.shape[:2]
+        else:
+            res = cv2.matchTemplate(frame, template, cv2.TM_CCOEFF_NORMED)
+            th, tw = template.shape[:2]
+        loc = np.where(res >= threshold)
+        locs = list(zip(*loc[::-1]))
+        if not locs:
+            return np.empty((0, 4), dtype=np.int32)
+        rects = [(int(x), int(y), int(x + tw), int(y + th)) for (x, y) in locs]
+        rects2 = rects + rects
+        grouped, _ = cv2.groupRectangles(rects2, groupThreshold=1, eps=0.01)
+        if grouped is None or len(grouped) == 0:
+            grouped = np.array(rects[: self.max_results], dtype=np.int32)
+        return grouped
+
+    def stream_match(
+        self,
+        template_path: str,
+        threshold: float = 0.7,
+        gray: bool = False,
+        gui: bool = False,
+    ) -> None:
+        """
+        Continuously match a template on the live stream.
+        - Headless (default): prints first match coords per frame if present.
+        - GUI mode: shows a window with overlay and 'q' to quit.
+        """
+        template = cv2.imread(template_path, cv2.IMREAD_COLOR)
+        if template is None:
+            raise RuntimeError(f"Failed to load template: {template_path}")
+        win = "stream_match (q=quit)"
+        headless = not gui
+        if not headless:
+            try:
+                cv2.namedWindow(win, cv2.WINDOW_NORMAL)
+            except Exception:
+                headless = True
+        try:
+            while True:
+                frame = self.screenshot()
+                rects = self._match_on_frame(frame, template, threshold=threshold, gray=gray)
+                if rects.size > 0:
+                    x1, y1, x2, y2 = map(int, rects[0].tolist())
+                    cx, cy = rect_center([x1, y1, x2, y2])
+                    if headless:
+                        print(f"match: {x1} {y1} {x2} {y2} center=({cx},{cy})")
+                    else:
+                        try:
+                            frame = draw_rectangles(frame, rects, color=(0, 255, 0), thickness=2)
+                            cv2.drawMarker(frame, (cx, cy), (0, 255, 255), markerType=cv2.MARKER_TILTED_CROSS, markerSize=24, thickness=2)
+                            cv2.displayStatusBar(win, f"Match @ ({cx},{cy})", 250)
+                        except Exception:
+                            pass
+                if not headless:
+                    cv2.imshow(win, frame)
+                    if (cv2.waitKey(1) & 0xFF) == ord('q'):
+                        break
+        except KeyboardInterrupt:
+            pass
+        finally:
+            with contextlib.suppress(Exception):
+                cv2.destroyAllWindows()

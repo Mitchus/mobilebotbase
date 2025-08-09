@@ -3,6 +3,7 @@ import sys
 from typing import Optional
 
 from bot import Bot, ensure_img_dir
+from stream_bot import StreamBot
 
 
 def main(argv: Optional[list[str]] = None) -> int:
@@ -49,6 +50,16 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     # coordinate probe
     p_coords = sub.add_parser("coords", help="Open a screenshot viewer that shows coordinates under the mouse")
+    # streaming match
+    p_stream = sub.add_parser("stream-match", help="Live stream template matching (low-latency)")
+    p_stream.add_argument("template", type=str, help="Path under img/ or full path to template image")
+    p_stream.add_argument("--threshold", type=float, default=0.7)
+    p_stream.add_argument("--gray", action="store_true")
+    p_stream.add_argument("--gui", action="store_true")
+    p_stream.add_argument("--source", type=str, default="adb", help="adb | scrcpy | video:/path | cam:N")
+    p_stream.add_argument("--size", type=str, default="1280x720", help="adb WIDTHxHEIGHT or scrcpy width")
+    p_stream.add_argument("--bit-rate", type=str, default="8000000")
+
     p_coords.add_argument("--scale", type=float, default=1.0, help="Display scale factor (1.0 = native)")
 
     # OCR: read number
@@ -184,6 +195,19 @@ def main(argv: Optional[list[str]] = None) -> int:
                 print(f"saved {path}")
 
         cv2.destroyWindow(win)
+        return 0
+
+    if args.cmd == "stream-match":
+        # Use StreamBot for continuous matching
+        # Auto-prefix img/ if a bare name is provided
+        tpl = args.template
+        if not (tpl.startswith("/") or tpl.startswith("img/")):
+            tpl = f"img/{tpl}"
+        b = StreamBot(source=args.source, size=args.size, bit_rate=args.bit_rate)
+        try:
+            b.stream_match(tpl, threshold=args.threshold, gray=args.gray, gui=args.gui)
+        finally:
+            b.close()
         return 0
 
     if args.cmd == "readnum":
