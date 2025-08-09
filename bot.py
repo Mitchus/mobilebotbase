@@ -106,6 +106,8 @@ class Bot:
         template_path: str,
         threshold: float = 0.45,
         return_image: bool = True,
+        use_gray: bool = False,
+        search_roi: Optional[Tuple[int, int, int, int]] = None,  # x, y, w, h
     ) -> Tuple[np.ndarray, np.ndarray]:
         template_path = _prefix_img_path(template_path)
         ensure_img_dir()
@@ -117,10 +119,34 @@ class Bot:
             raise RuntimeError(f"Failed to load template: {template_path}")
 
         screenshot = self.screenshot()
-        if template.ndim != 3 or screenshot.ndim != 3 or template.shape[2] != screenshot.shape[2]:
-            raise ValueError("Template and screenshot must have same number of color channels")
 
-        res = cv2.matchTemplate(screenshot, template, cv2.TM_CCOEFF_NORMED)
+        # Optional ROI crop to reduce matching cost
+        off_x, off_y = 0, 0
+        search_img = screenshot
+        if search_roi is not None:
+            x, y, w, h = map(int, search_roi)
+            x = max(0, x)
+            y = max(0, y)
+            w = max(1, w)
+            h = max(1, h)
+            off_x, off_y = x, y
+            search_img = screenshot[y : y + h, x : x + w]
+            if search_img.size == 0:
+                self.last_rect = None
+                return (screenshot if return_image else np.empty((0,)), np.empty((0, 4), dtype=np.int32))
+
+        # Optional grayscale match for speed
+        if use_gray:
+            t = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
+            s = cv2.cvtColor(search_img, cv2.COLOR_BGR2GRAY)
+            res = cv2.matchTemplate(s, t, cv2.TM_CCOEFF_NORMED)
+            th, tw = t.shape[:2]
+        else:
+            if template.ndim != 3 or search_img.ndim != 3 or template.shape[2] != search_img.shape[2]:
+                raise ValueError("Template and screenshot must have same number of color channels")
+            res = cv2.matchTemplate(search_img, template, cv2.TM_CCOEFF_NORMED)
+            th, tw = template.shape[:2]
+
         loc = np.where(res >= threshold)
         locs = list(zip(*loc[::-1]))
 
@@ -130,9 +156,8 @@ class Bot:
             return (screenshot if return_image else np.empty((0,)), np.empty((0, 4), dtype=np.int32))
 
         rects: List[List[int]] = []
-        th, tw = template.shape[:2]
         for (x, y) in locs:
-            rects.append([int(x), int(y), int(x + tw), int(y + th)])
+            rects.append([int(off_x + x), int(off_y + y), int(off_x + x + tw), int(off_y + y + th)])
 
         # Trick: duplicate rects to allow groupRectangles to return singles when groupThreshold>0
         rects = rects + rects
@@ -155,7 +180,7 @@ class Bot:
         else:
             return screenshot, grouped
 
-    def click_last_match(self, clicks: int = 1) -> bool:
+    def click_last_match(self, clicks: int = 1, inter_click_delay: float = 0.0) -> bool:
         """Click the center of the most recent matched rectangle.
 
         Returns True on click, False if there is no stored match.
@@ -165,21 +190,47 @@ class Bot:
             return False
         x1, y1, x2, y2 = map(int, self.last_rect)
         cx, cy = rect_center([x1, y1, x2, y2])
-        for _ in range(max(1, clicks)):
+        for i in range(max(1, clicks)):
             self.click(cx, cy)
-            time.sleep(0.1)
+            if inter_click_delay > 0 and i < clicks - 1:
+                time.sleep(inter_click_delay)
         print(f"Tapped last match at ({cx},{cy})")
         return True
 
-    def tap_image(self, template_path: str, threshold: float = 0.45, clicks: int = 1) -> bool:
-        img, rects = self.match_template(template_path, threshold=threshold, return_image=False)
+    def tap_rect(self, rect: Tuple[int, int, int, int], clicks: int = 1, inter_click_delay: float = 0.0) -> bool:
+        """Tap the center of a given rect immediately (no re-matching)."""
+        x1, y1, x2, y2 = map(int, rect)
+        cx, cy = rect_center([x1, y1, x2, y2])
+        for i in range(max(1, clicks)):
+            self.click(cx, cy)
+            if inter_click_delay > 0 and i < clicks - 1:
+                time.sleep(inter_click_delay)
+        return True
+
+    def tap_image(
+        self,
+        template_path: str,
+        threshold: float = 0.45,
+        clicks: int = 1,
+        inter_click_delay: float = 0.0,
+        use_gray: bool = False,
+        search_roi: Optional[Tuple[int, int, int, int]] = None,
+    ) -> bool:
+        img, rects = self.match_template(
+            template_path,
+            threshold=threshold,
+            return_image=False,
+            use_gray=use_gray,
+            search_roi=search_roi,
+        )
         if len(rects) == 0:
             print(f"No match: {template_path}")
             return False
         cx, cy = rect_center(rects[0].tolist())
-        for _ in range(max(1, clicks)):
+        for i in range(max(1, clicks)):
             self.click(cx, cy)
-            time.sleep(0.1)
+            if inter_click_delay > 0 and i < clicks - 1:
+                time.sleep(inter_click_delay)
         print(f"Tapped {template_path} at ({cx},{cy})")
         return True
 
@@ -190,15 +241,28 @@ class Bot:
         timeout: float = 30.0,
         poll: float = 0.5,
         click_on_appear: bool = False,
+        click_on_appear_clicks: int = 1,
+        inter_click_delay: float = 0.0,
+        use_gray: bool = False,
+        search_roi: Optional[Tuple[int, int, int, int]] = None,
     ) -> bool:
         end = time.time() + timeout
         while time.time() < end:
-            _, rects = self.match_template(template_path, threshold=threshold, return_image=False)
+            _, rects = self.match_template(
+                template_path,
+                threshold=threshold,
+                return_image=False,
+                use_gray=use_gray,
+                search_roi=search_roi,
+            )
             if len(rects) > 0:
                 cx, cy = rect_center(rects[0].tolist())
                 print(f"Found {template_path} at ({cx},{cy})")
                 if click_on_appear:
-                    self.click(cx, cy)
+                    for i in range(max(1, int(click_on_appear_clicks))):
+                        self.click(cx, cy)
+                        if inter_click_delay > 0 and i < click_on_appear_clicks - 1:
+                            time.sleep(inter_click_delay)
                 return True
             time.sleep(poll)
         print(f"Timeout waiting for {template_path}")

@@ -9,21 +9,20 @@ from bot import Bot
 def main():
     b = Bot()
     caught = 0
-    while caught < 42069:
-        # Wait for farmpongfish2.png and spam click it 3 times
-        b.wait_for_image("farmpongfish2.png", threshold=0.55, timeout=20, click_on_appear=True)
-        for _ in range(2):
-            b.click_last_match()
-            time.sleep(0.01)
-        # if catchingfish.png press catchingfish
-        time.sleep(0.1)
-        b.tap_image("catchingfish.png", threshold=0.7, clicks=10)
-        time.sleep(0.1)
-        if b.match_template("youcaughtsomething.png"):
-            # todo
-            caught += 1 
-        else:
-            print("No catch this time.")
+    CATCH_ROI = (0, 1800, 1000, 200)
+    while True:
+        # 1) Wait and burst-click the fish
+        b.wait_for_image(
+            "farmpongfish2.png",
+            threshold=0.9,
+            timeout=20,
+            click_on_appear=True,
+            click_on_appear_clicks=3,
+            inter_click_delay=0.0,
+            use_gray=False,)
+        if b.wait_for_image("incapturefish.png", 0.8, timeout= 1):
+            for i in range(5):
+                b.tap_image("catchingfish.png")
 
 if __name__ == "__main__":
     main()

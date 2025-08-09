@@ -139,7 +139,15 @@ def main(argv: Optional[list[str]] = None) -> int:
                 disp = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
             return disp
 
-        cv2.namedWindow(win, cv2.WINDOW_NORMAL)
+        # Try to create a GUI window; fall back gracefully if GUI support is unavailable
+        try:
+            cv2.namedWindow(win, cv2.WINDOW_NORMAL)
+        except Exception as e:  # pragma: no cover
+            print("OpenCV GUI functions are unavailable in this environment.")
+            print("Tip: Install a GUI-enabled OpenCV (pip install opencv-python) and ensure a display is available.")
+            print("Headless alternative: run 'python main.py find catchingfish.png --threshold 0.7' to print match rectangles;\n"
+                  "use the printed (x1,y1,x2,y2) to derive a CATCH_ROI around that area.")
+            return 2
 
         def show_status(text: str, ms: int = 1000) -> None:
             # Prefer status bar; fall back to window title if unavailable
