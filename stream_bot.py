@@ -272,6 +272,7 @@ class StreamBot(Bot):
                     cx, cy = rect_center([x1, y1, x2, y2])
                     if headless:
                         print(f"match: {x1} {y1} {x2} {y2} center=({cx},{cy})")
+                        return (cx, cy)
                     else:
                         try:
                             frame = draw_rectangles(frame, rects, color=(0, 255, 0), thickness=2)
