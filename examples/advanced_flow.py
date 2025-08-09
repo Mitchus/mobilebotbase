@@ -1,5 +1,5 @@
 import time
-from bot import Bot
+from stream_bot import StreamBot as Bot
 
 
 def exists(b: Bot, template: str, threshold: float = 0.7) -> bool:
@@ -17,7 +17,7 @@ def wait_until_gone(b: Bot, template: str, threshold: float = 0.7, timeout: floa
 
 
 def main():
-    b = Bot()
+    b = Bot(source="adb", size="1280x720", bit_rate="8000000")
 
     # 1) Wait for a known screen and click on appear
     b.wait_for_image("mainmenumyfarm.png", threshold=0.8, timeout=20, click_on_appear=True)

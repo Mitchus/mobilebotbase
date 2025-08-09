@@ -1,13 +1,15 @@
 """
-Example automation flow using the Bot API.
+Example automation flow using the streaming Bot API.
 Run: python main.py runpy examples/my_flow.py
 """
 import time
-from bot import Bot
+# Use StreamBot drop-in replacement for live streaming frames
+from stream_bot import StreamBot as Bot
 
 
 def main():
-    b = Bot()
+    # Stream from adb screenrecord at a smaller size for higher FPS
+    b = Bot(source="adb", size="1280x720", bit_rate="8000000")
     caught = 0
     CATCH_ROI = (0, 1800, 1000, 200)
     while True:
