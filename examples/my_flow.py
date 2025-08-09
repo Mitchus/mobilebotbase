@@ -8,15 +8,22 @@ from bot import Bot
 
 def main():
     b = Bot()
-
-    b.wait_for_image("mainmenumyfarm.png", threshold=0.8, timeout=20, click_on_appear=True)
-    time.sleep(1.0)
-
-    b.tap_image("harvestallcrops.png", threshold=0.8)
-    time.sleep(0.5)
-
-    
-
+    caught = 0
+    while caught < 42069:
+        # Wait for farmpongfish2.png and spam click it 3 times
+        b.wait_for_image("farmpongfish2.png", threshold=0.55, timeout=20, click_on_appear=True)
+        for _ in range(2):
+            b.click_last_match()
+            time.sleep(0.01)
+        # if catchingfish.png press catchingfish
+        time.sleep(0.1)
+        b.tap_image("catchingfish.png", threshold=0.7, clicks=10)
+        time.sleep(0.1)
+        if b.match_template("youcaughtsomething.png"):
+            # todo
+            caught += 1 
+        else:
+            print("No catch this time.")
 
 if __name__ == "__main__":
     main()

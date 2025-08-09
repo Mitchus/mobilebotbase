@@ -51,6 +51,16 @@ def main(argv: Optional[list[str]] = None) -> int:
     p_coords = sub.add_parser("coords", help="Open a screenshot viewer that shows coordinates under the mouse")
     p_coords.add_argument("--scale", type=float, default=1.0, help="Display scale factor (1.0 = native)")
 
+    # OCR: read number
+    p_readnum = sub.add_parser("readnum", help="Read a number by OCR either in an ROI or near a template")
+    mode = p_readnum.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--roi", nargs=4, type=int, metavar=("X", "Y", "W", "H"), help="ROI in device pixels")
+    mode.add_argument("--near", nargs=5, metavar=("TEMPLATE", "DX", "DY", "W", "H"), help="Read near template: path and ROI offset")
+    p_readnum.add_argument("--type", choices=["int", "float"], default="int", help="Parse as int or float")
+    p_readnum.add_argument("--threshold", type=float, default=0.45, help="Template match threshold when using --near")
+    p_readnum.add_argument("--psm", type=int, default=7, help="Tesseract page segmentation mode (default 7)")
+    p_readnum.add_argument("--invert", action="store_true", help="Invert colors before OCR (use for light-on-dark or vice versa)")
+
     args = parser.parse_args(argv)
 
     if args.cmd == "click":
@@ -166,6 +176,24 @@ def main(argv: Optional[list[str]] = None) -> int:
                 print(f"saved {path}")
 
         cv2.destroyWindow(win)
+        return 0
+
+    if args.cmd == "readnum":
+        bot = Bot()
+        try:
+            if args.roi is not None:
+                x, y, w, h = map(int, args.roi)
+                val = bot.read_number_in_roi((x, y, w, h), number_type=args.type, psm=args.psm, invert=args.invert)
+            else:
+                tpl, dx, dy, w, h = args.near
+                val = bot.read_number_near_template(tpl, (int(dx), int(dy), int(w), int(h)), threshold=args.threshold, number_type=args.type, psm=args.psm, invert=args.invert)
+        except RuntimeError as e:
+            print(str(e))
+            return 2
+        if val is None:
+            print("None")
+            return 1
+        print(val)
         return 0
 
     parser.print_help()

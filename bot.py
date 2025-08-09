@@ -15,6 +15,7 @@ from typing import List, Tuple, Optional
 
 import cv2  # type: ignore
 import numpy as np  # type: ignore
+import re
 
 try:
     from ppadb.client import Client as AdbClient  # type: ignore
@@ -49,12 +50,26 @@ def draw_rectangles(img: np.ndarray, rects: np.ndarray, color=(0, 255, 255), thi
     return out
 
 
+def _require_tesseract():
+    try:
+        import pytesseract  # type: ignore
+    except Exception as e:  # pragma: no cover
+        raise RuntimeError(
+            "pytesseract and the Tesseract OCR engine are required.\n"
+            "Install: pip install pytesseract\n"
+            "And ensure the 'tesseract' binary is installed and on PATH (e.g., apt install tesseract-ocr)."
+        ) from e
+    return pytesseract
+
+
 @dataclass
 class Bot:
     host: str = "127.0.0.1"
     port: int = 5037
     max_results: int = 42
     device: Optional[object] = None
+    # Stores the most recent match rectangle as (x1, y1, x2, y2) or None if no match yet
+    last_rect: Optional[Tuple[int, int, int, int]] = None
 
     def __post_init__(self):
         if self.device is None:
@@ -110,6 +125,8 @@ class Bot:
         locs = list(zip(*loc[::-1]))
 
         if not locs:
+            # No matches – clear last_rect and return
+            self.last_rect = None
             return (screenshot if return_image else np.empty((0,)), np.empty((0, 4), dtype=np.int32))
 
         rects: List[List[int]] = []
@@ -125,11 +142,34 @@ class Bot:
         if len(grouped) > self.max_results:
             grouped = grouped[: self.max_results]
 
+        # Save the best/first grouped rect as the last match
+        if len(grouped) > 0:
+            x1, y1, x2, y2 = map(int, grouped[0].tolist())
+            self.last_rect = (x1, y1, x2, y2)
+        else:
+            self.last_rect = None
+
         if return_image:
             vis = draw_rectangles(screenshot, grouped)
             return vis, grouped
         else:
             return screenshot, grouped
+
+    def click_last_match(self, clicks: int = 1) -> bool:
+        """Click the center of the most recent matched rectangle.
+
+        Returns True on click, False if there is no stored match.
+        """
+        if not self.last_rect:
+            print("No last match to click")
+            return False
+        x1, y1, x2, y2 = map(int, self.last_rect)
+        cx, cy = rect_center([x1, y1, x2, y2])
+        for _ in range(max(1, clicks)):
+            self.click(cx, cy)
+            time.sleep(0.1)
+        print(f"Tapped last match at ({cx},{cy})")
+        return True
 
     def tap_image(self, template_path: str, threshold: float = 0.45, clicks: int = 1) -> bool:
         img, rects = self.match_template(template_path, threshold=threshold, return_image=False)
@@ -214,3 +254,90 @@ class Bot:
             cv2.destroyWindow("Saved Template")
         print(f"Saved template: {out_path} ({w}x{h})")
         return out_path
+
+    # --- OCR utilities ---
+    def _prep_roi_for_ocr(self, roi_img: np.ndarray, invert: bool = False) -> np.ndarray:
+        gray = cv2.cvtColor(roi_img, cv2.COLOR_BGR2GRAY)
+        # Slight blur to reduce noise
+        gray = cv2.GaussianBlur(gray, (3, 3), 0)
+        # Adaptive threshold can be more robust; fall back to Otsu if needed
+        try:
+            th = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                       cv2.THRESH_BINARY, 31, 9)
+        except Exception:
+            _, th = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        if invert:
+            th = cv2.bitwise_not(th)
+        return th
+
+    def read_text_in_roi(
+        self,
+        roi: Tuple[int, int, int, int],  # x, y, w, h
+        psm: int = 7,
+        whitelist: Optional[str] = None,
+        invert: bool = False,
+    ) -> str:
+        """
+        OCR any text within the given ROI. Returns the raw text (stripped).
+        Requires: pytesseract + Tesseract-OCR installed.
+        """
+        x, y, w, h = map(int, roi)
+        if w <= 0 or h <= 0:
+            raise ValueError("ROI has zero width/height")
+        img = self.screenshot()
+        crop = img[y : y + h, x : x + w]
+        if crop.size == 0:
+            raise RuntimeError("Invalid ROI crop for OCR")
+        proc = self._prep_roi_for_ocr(crop, invert=invert)
+        pytesseract = _require_tesseract()
+        cfg = f"--psm {int(psm)} --oem 3"
+        if whitelist:
+            cfg += f" -c tessedit_char_whitelist={whitelist}"
+        txt = pytesseract.image_to_string(proc, config=cfg)
+        return (txt or "").strip()
+
+    def read_number_in_roi(
+        self,
+        roi: Tuple[int, int, int, int],  # x, y, w, h
+        number_type: str = "int",  # 'int' or 'float'
+        psm: int = 7,
+        invert: bool = False,
+    ) -> Optional[float]:
+        """
+        OCR digits in ROI and parse a number. Returns float or None if not found.
+        number_type='int' will coerce to int (as float return type), 'float' keeps decimals.
+        """
+        wl = "0123456789." if number_type == "float" else "0123456789"
+        text = self.read_text_in_roi(roi, psm=psm, whitelist=wl, invert=invert)
+        # Extract first number from text
+        m = re.search(r"\d+[\.,]?\d*", text.replace(",", "."))
+        if not m:
+            return None
+        try:
+            val = float(m.group(0))
+        except Exception:
+            return None
+        if number_type == "int":
+            return float(int(round(val)))
+        return val
+
+    def read_number_near_template(
+        self,
+        template_path: str,
+        offset: Tuple[int, int, int, int],  # dx, dy, w, h relative to match top-left
+        threshold: float = 0.45,
+        number_type: str = "int",
+        psm: int = 7,
+        invert: bool = False,
+    ) -> Optional[float]:
+        """
+        Find template, then OCR a number in a ROI defined relative to the template's top-left.
+        offset=(dx,dy,w,h) where dx,dy are from the match's x1,y1.
+        """
+        _, rects = self.match_template(template_path, threshold=threshold, return_image=False)
+        if len(rects) == 0:
+            return None
+        x1, y1, x2, y2 = map(int, rects[0].tolist())
+        dx, dy, w, h = map(int, offset)
+        roi = (x1 + dx, y1 + dy, w, h)
+        return self.read_number_in_roi(roi, number_type=number_type, psm=psm, invert=invert)

@@ -8,11 +8,16 @@ Requirements:
 - Python 3.10+
 - ADB server running and phone connected (USB or TCP)
 - Packages: pure-python-adb, opencv-python, numpy
+	- Optional OCR: pytesseract + system tesseract-ocr
 
 Install deps (example):
 
 ```bash
 pip install pure-python-adb opencv-python numpy
+# OCR (optional)
+pip install pytesseract
+# Ensure system tesseract is installed (Linux):
+# sudo apt-get install -y tesseract-ocr
 ```
 
 Run the CLI:
@@ -44,6 +49,12 @@ python main.py runpy examples/my_flow.py -- --any --args --for --your --script
 
 # Inspect device coordinates interactively (q=quit, r=refresh, s=save)
 python main.py coords --scale 0.6
+
+# Read a number in a specific ROI (x y w h)
+python main.py readnum --roi 100 200 160 60 --type int
+
+# Read a number near a template: TEMPLATE dx dy w h
+python main.py readnum --near price_tag.png 80 0 200 80 --threshold 0.7 --type float
 ```
 
 ## Easier way to create templates (no manual crop/rename)
@@ -191,6 +202,36 @@ Keys:
 - r: refresh screenshot
 - s: save current screenshot to img/coords_YYYYmmdd_HHMMSS.png
 - Left click: prints the exact device coordinates to the console
+
+### OCR: read numbers from the screen
+You can OCR digits from a region or relative to a template.
+
+Install:
+
+```bash
+pip install pytesseract
+# Linux
+sudo apt-get install -y tesseract-ocr
+```
+
+Examples:
+
+```bash
+# Read integer at ROI (x y w h)
+python main.py readnum --roi 100 200 160 60 --type int
+
+# Read price near a known icon: offset (dx dy w h) from template's top-left
+python main.py readnum --near price_tag.png 80 0 200 80 --threshold 0.7 --type float
+
+# If text is light-on-dark and OCR struggles, try inversion and PSM tuning
+python main.py readnum --roi 100 200 160 60 --type int --invert --psm 6
+```
+
+Tips:
+- Use `python main.py coords` to measure your ROI.
+- Keep ROIs tight around the digits; avoid icons or decorations.
+- For decimal numbers, use `--type float`.
+- If results are noisy, try different `--psm` (6, 7, or 8) and `--invert` depending on theme.
 
 ### Keep your workflow in Markdown (docs and run commands)
 While flows run as Python, documenting them in Markdown keeps them organized. Example `examples/workflow.md`:
