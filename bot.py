@@ -50,6 +50,60 @@ def draw_rectangles(img: np.ndarray, rects: np.ndarray, color=(0, 255, 255), thi
     return out
 
 
+def get_optimal_window_size(image_shape: Tuple[int, int], max_width_ratio: float = 0.9, max_height_ratio: float = 0.8) -> Tuple[int, int]:
+    """
+    Calculate optimal window size for displaying an image, maximizing width while maintaining aspect ratio.
+    
+    Args:
+        image_shape: (height, width) of the image to display
+        max_width_ratio: Maximum ratio of screen width to use (default 0.9 = 90%)
+        max_height_ratio: Maximum ratio of screen height to use (default 0.8 = 80%)
+    
+    Returns:
+        (width, height) for the optimal window size
+    """
+    img_height, img_width = image_shape[:2]
+    
+    # Try to get screen dimensions, fall back to reasonable defaults if unavailable
+    try:
+        # Get primary monitor size (works on most platforms with GUI)
+        import tkinter as tk
+        root = tk.Tk()
+        screen_width = root.winfo_screenwidth()
+        screen_height = root.winfo_screenheight()
+        root.destroy()
+    except Exception:
+        # Fallback to common screen resolutions
+        screen_width = 1920
+        screen_height = 1080
+    
+    # Calculate maximum allowed window dimensions
+    max_window_width = int(screen_width * max_width_ratio)
+    max_window_height = int(screen_height * max_height_ratio)
+    
+    # Calculate aspect ratio
+    aspect_ratio = img_width / img_height
+    
+    # Try to maximize width first
+    if img_width <= max_window_width and img_height <= max_window_height:
+        # Image fits within limits, use original size
+        return img_width, img_height
+    
+    # Scale based on width constraint
+    width_based_width = max_window_width
+    width_based_height = int(max_window_width / aspect_ratio)
+    
+    # Scale based on height constraint  
+    height_based_height = max_window_height
+    height_based_width = int(max_window_height * aspect_ratio)
+    
+    # Choose the scaling that fits within both constraints
+    if width_based_height <= max_window_height:
+        return width_based_width, width_based_height
+    else:
+        return height_based_width, height_based_height
+
+
 def _require_tesseract():
     try:
         import pytesseract  # type: ignore
@@ -298,7 +352,9 @@ class Bot:
             show_crosshair = True
             disp = shot.copy()
             cv2.namedWindow("Select ROI", cv2.WINDOW_NORMAL)
-            cv2.resizeWindow("Select ROI", 800, 450)
+            # Calculate optimal window size based on screenshot dimensions
+            optimal_width, optimal_height = get_optimal_window_size(shot.shape, max_width_ratio=0.85, max_height_ratio=0.75)
+            cv2.resizeWindow("Select ROI", optimal_width, optimal_height)
             r = cv2.selectROI("Select ROI", disp, showCrosshair=show_crosshair, fromCenter=from_center)
             cv2.destroyWindow("Select ROI")
             x, y, w, h = map(int, r)

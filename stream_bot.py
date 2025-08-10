@@ -22,7 +22,7 @@ try:
 except Exception:  # pragma: no cover
     av = None  # type: ignore
 
-from bot import Bot, rect_center, draw_rectangles
+from bot import Bot, rect_center, draw_rectangles, get_optimal_window_size
 
 
 def _adb_screenrecord_stream(serial: Optional[str] = None, bit_rate: str = "8000000", size: Optional[str] = None):
@@ -261,6 +261,10 @@ class StreamBot(Bot):
         if not headless:
             try:
                 cv2.namedWindow(win, cv2.WINDOW_NORMAL)
+                # Get the first frame to determine optimal window size
+                first_frame = self.screenshot()
+                optimal_width, optimal_height = get_optimal_window_size(first_frame.shape)
+                cv2.resizeWindow(win, optimal_width, optimal_height)
             except Exception:
                 headless = True
         try:

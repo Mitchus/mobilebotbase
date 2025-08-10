@@ -21,6 +21,10 @@ import contextlib
 import numpy as np
 import cv2
 
+# Import from parent directory
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from bot import get_optimal_window_size
+
 try:
     import av  # PyAV
 except Exception:
@@ -151,6 +155,8 @@ def main():
             if not headless:
                 try:
                     cv2.namedWindow(win, cv2.WINDOW_NORMAL)
+                    # Set up window sizing - will optimize size after getting first frame
+                    window_resized = False
                 except Exception:
                     print("GUI unavailable; falling back to headless printing.")
                     headless = True
@@ -159,6 +165,14 @@ def main():
                     if frame is None or frame.width == 0:
                         continue
                     img = frame.to_ndarray(format="bgr24")
+                    # Resize window optimally on first frame
+                    if not headless and not window_resized:
+                        try:
+                            optimal_width, optimal_height = get_optimal_window_size(img.shape)
+                            cv2.resizeWindow(win, optimal_width, optimal_height)
+                            window_resized = True
+                        except Exception:
+                            pass  # Continue without optimal sizing if it fails
                     rects = match_template(img, tpl, threshold=args.threshold, gray=args.gray)
                     if rects:
                         x1, y1, x2, y2 = rects[0]
@@ -193,6 +207,8 @@ def main():
             if not headless:
                 try:
                     cv2.namedWindow(win, cv2.WINDOW_NORMAL)
+                    # Set up window sizing - will optimize size after getting first frame
+                    window_resized = False
                 except Exception:
                     print("GUI unavailable; falling back to headless printing.")
                     headless = True
@@ -202,6 +218,14 @@ def main():
                     if frame is None or getattr(frame, 'width', 0) == 0:
                         continue
                     img = frame.to_ndarray(format="bgr24")
+                    # Resize window optimally on first frame
+                    if not headless and not window_resized:
+                        try:
+                            optimal_width, optimal_height = get_optimal_window_size(img.shape)
+                            cv2.resizeWindow(win, optimal_width, optimal_height)
+                            window_resized = True
+                        except Exception:
+                            pass  # Continue without optimal sizing if it fails
                     rects = match_template(img, tpl, threshold=args.threshold, gray=args.gray)
                     if rects:
                         x1, y1, x2, y2 = rects[0]
@@ -234,6 +258,8 @@ def main():
             if not headless:
                 try:
                     cv2.namedWindow(win, cv2.WINDOW_NORMAL)
+                    # Set up window sizing - will optimize size after getting first frame
+                    window_resized = False
                 except Exception:
                     print("GUI unavailable; falling back to headless printing.")
                     headless = True
@@ -241,6 +267,14 @@ def main():
                 ok, img = cap.read()
                 if not ok:
                     break
+                # Resize window optimally on first frame
+                if not headless and not window_resized:
+                    try:
+                        optimal_width, optimal_height = get_optimal_window_size(img.shape)
+                        cv2.resizeWindow(win, optimal_width, optimal_height)
+                        window_resized = True
+                    except Exception:
+                        pass  # Continue without optimal sizing if it fails
                 rects = match_template(img, tpl, threshold=args.threshold, gray=args.gray)
                 if rects:
                     x1, y1, x2, y2 = rects[0]
