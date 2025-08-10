@@ -1,4 +1,4 @@
-﻿# ADBImgDetection (streaming)
+﻿# Mobile Bot Base (streaming)
 
 Image-based automation for Android. Now with live streaming capture.
 

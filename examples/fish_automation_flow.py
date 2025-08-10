@@ -1,9 +1,13 @@
 """
-Streaming fish-catch flow:
+Example: Streaming fish-catch automation flow.
+
+This example demonstrates advanced game automation using StreamBot:
 1) Wait for farmpongfish2 to light up and click it quickly.
 2) When incapturefish overlay appears, click the moving catchingfish button until done.
 
 Works with StreamBot on adb or a video source (e.g., scrcpy -> v4l2loopback).
+
+Usage: python examples/fish_automation_flow.py
 """
 
 import time
@@ -15,7 +19,7 @@ from stream_bot import StreamBot
 from bot import rect_center
 
 
-TPL_FISH_BUTTON = "/home/mitchus/Programming/ADBImgDetection/img/farmpongfish.png"
+TPL_FISH_BUTTON = "farmpongfish.png"
 TPL_IN_CAPTURE = "incapturefish.png"
 TPL_CATCH = "catchingfish.png"
 TPL_CAUGHT = "youcaughtsomething.png"  # optional end cue
@@ -122,6 +126,7 @@ def run(source: str = "adb", size: Optional[str] = "1280x720", bit_rate: str = "
 
 
 if __name__ == "__main__":
-    # Default to adb; swap to "video:/dev/video10" if using scrcpy->v4l2
-    run(source="video:/dev/video10")
-    # run(source="adb", size="1280x720")
+    # Example: run with adb source
+    run(source="adb", size="1280x720")
+    # Alternative: run with v4l2 video source
+    # run(source="video:/dev/video10")
